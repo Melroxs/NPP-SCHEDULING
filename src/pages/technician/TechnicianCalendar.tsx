@@ -112,8 +112,11 @@ export function TechnicianCalendar() {
   }, []);
 
   useEffect(() => {
-    loadAppointments();
-    loadCustomers();
+    // Async boundary: state is only touched after the fetches resolve.
+    void (async () => {
+      await loadAppointments();
+      await loadCustomers();
+    })();
   }, [loadAppointments, loadCustomers]);
 
   const handleEventClick = (info: EventClickArg) => {

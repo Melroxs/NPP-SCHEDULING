@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { getAppointments, updateAppointmentStatus } from '@/services/appointmentService';
 import { getCalendarEvents, getValidAccessToken } from '@/services/googleCalendarService';
 import { supabase } from '@/lib/supabase';
+import { USER_PUBLIC_COLUMNS } from '@/lib/userColumns';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -52,7 +53,7 @@ export function ManagerCalendar() {
     // Load technicians
     const { data: techs } = await supabase
       .from('ss_users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .eq('role', 'technician')
       .eq('active', true)
       .order('name');
@@ -117,7 +118,10 @@ export function ManagerCalendar() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    // Async boundary: state is only touched after the fetches resolve.
+    void (async () => {
+      await loadData();
+    })();
   }, [loadData]);
 
   const filteredEvents = filterTechId === 'all'

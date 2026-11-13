@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { getCustomers } from '@/services/customerService';
 import { getAppointments } from '@/services/appointmentService';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,7 +19,7 @@ import type { Customer, Address, Appointment } from '@/types/database';
 
 export function CustomersPage() {
   const [customers, setCustomers] = useState<(Customer & { addresses: Address[] })[]>([]);
-  const [filteredCustomers, setFilteredCustomers] = useState<(Customer & { addresses: Address[] })[]>([]);
+
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<(Customer & { addresses: Address[] }) | null>(null);
@@ -29,31 +29,29 @@ export function CustomersPage() {
     try {
       const data = await getCustomers();
       setCustomers(data);
-      setFilteredCustomers(data);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    // Async boundary: state is only touched after the fetch resolves.
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
-  useEffect(() => {
-    if (!search) {
-      setFilteredCustomers(customers);
-    } else {
-      const q = search.toLowerCase();
-      setFilteredCustomers(
-        customers.filter(
-          (c) =>
-            c.first_name.toLowerCase().includes(q) ||
-            c.last_name.toLowerCase().includes(q) ||
-            c.email.toLowerCase().includes(q) ||
-            c.phone.includes(q),
-        ),
-      );
-    }
+  // Derived state: filtering during render avoids an extra render pass.
+  const filteredCustomers = useMemo(() => {
+    if (!search) return customers;
+    const q = search.toLowerCase();
+    return customers.filter(
+      (c) =>
+        c.first_name.toLowerCase().includes(q) ||
+        c.last_name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        c.phone.includes(q),
+    );
   }, [search, customers]);
 
   const viewCustomer = async (customer: Customer & { addresses: Address[] }) => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { requestNotificationPermission } from '@/lib/firebase';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,18 +9,17 @@ const DISMISSED_KEY = 'summit-notif-onboard-dismissed';
 
 export function NotificationOnboarding() {
   const { profile } = useAuthStore();
-  const [show, setShow] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  // Resolved once on mount instead of being set from an effect, which avoids a
+  // second render pass just to reveal the banner.
+  const [show, setShow] = useState<boolean>(() => {
+    if (typeof Notification === 'undefined') return false;
+    if (Notification.permission === 'granted' || Notification.permission === 'denied') return false;
+    if (localStorage.getItem(DISMISSED_KEY) === 'true') return false;
+    return true;
+  });
 
-  useEffect(() => {
-    if (!profile) return;
-    if (typeof Notification === 'undefined') return;
-    if (Notification.permission === 'granted' || Notification.permission === 'denied') return;
-    if (localStorage.getItem(DISMISSED_KEY) === 'true') return;
-    setShow(true);
-  }, [profile]);
-
-  if (!show) return null;
+  if (!show || !profile) return null;
 
   const handleEnable = async () => {
     if (!profile) return;

@@ -11,12 +11,17 @@ export function NotificationCenter() {
   const { notifications, unreadCount, fetchNotifications, markAsRead, markAllAsRead } =
     useNotificationStore();
 
+  const profileId = profile?.id;
+
   const load = useCallback(() => {
-    if (profile?.id) fetchNotifications(profile.id);
-  }, [profile?.id, fetchNotifications]);
+    if (profileId) fetchNotifications(profileId);
+  }, [profileId, fetchNotifications]);
 
   useEffect(() => {
-    load();
+    // Async boundary: the store updates only after the request resolves.
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   return (

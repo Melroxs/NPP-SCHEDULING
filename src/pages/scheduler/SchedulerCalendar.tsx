@@ -42,7 +42,11 @@ export function SchedulerCalendar() {
   }, []);
 
   useEffect(() => {
-    loadAppointments();
+    // Async boundary: state is only touched after the fetch resolves, so this
+    // effect cannot trigger a synchronous cascading render.
+    void (async () => {
+      await loadAppointments();
+    })();
   }, [loadAppointments]);
 
   const handleEventClick = (info: EventClickArg) => {
