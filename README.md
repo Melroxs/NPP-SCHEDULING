@@ -37,6 +37,9 @@ npm run dev
 | `npm run test` | Unit tests (Vitest) |
 | `npm run build` | Production build into `dist/` |
 
+Database/authorization tests and Edge Function checks are documented in
+`supabase/tests/README.md` (they need a local PostgreSQL 14+ and Deno).
+
 ## Environment variables
 
 See `.env.example`. Anything prefixed `VITE_` is **public** — it is compiled
@@ -93,6 +96,8 @@ WHERE a.status NOT IN ('cancelled','no_show')
 
 The migration aborts with an explanatory message rather than modifying data if
 conflicts exist. Resolve them (cancel or reschedule the duplicate) and re-run.
+The migration is idempotent and has been verified against a database containing
+a conflicting pair (aborts, data untouched) and after resolution (applies).
 
 ## Edge Functions
 
