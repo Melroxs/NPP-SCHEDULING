@@ -139,7 +139,9 @@ fail with a clear error. Everything else works.
 
 ## Deployment
 
-The build is static (`dist/`). Configure:
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the staging checklist,
+required credentials, verification matrix and rollback plan. The build is
+static (`dist/`); configure:
 
 1. Build command `npm run build`, output directory `dist`.
 2. SPA rewrite of all paths to `/index.html` (`vercel.json` is included).
