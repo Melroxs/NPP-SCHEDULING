@@ -139,11 +139,11 @@ async function exchange(caller: Caller, body: ExchangeBody) {
   const primary = list.find((c) => c.primary) ?? list[0];
   if (!primary) throw new HttpError(400, 'No calendars found for this Google account');
 
-  const userInfo = await fetch(GOOGLE_USERINFO, {
+  const userInfo = (await fetch(GOOGLE_USERINFO, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   })
     .then((r) => (r.ok ? r.json() : {}))
-    .catch(() => ({}));
+    .catch(() => ({}))) as { id?: string; email?: string };
 
   await upsertProfile(caller.id, {
     google_account_id: userInfo.id ?? userInfo.email ?? null,
