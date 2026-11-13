@@ -1,5 +1,6 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { defaultRouteForRole } from '@/lib/roles';
 import type { UserRole } from '@/types/database';
 
 interface AuthGuardProps {
@@ -9,29 +10,24 @@ interface AuthGuardProps {
 
 export function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   const { profile, initialized } = useAuthStore();
+  const location = useLocation();
 
   if (!initialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" role="status" aria-live="polite">
+        <span className="sr-only">Loading your session…</span>
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
   if (!profile) {
-    return <Navigate to="/login" replace />;
+    // Remember the intended destination so users land there after signing in.
+    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    const defaultRoute =
-      profile.role === 'admin'
-        ? '/admin/dashboard'
-        : profile.role === 'manager'
-          ? '/manager/dashboard'
-          : profile.role === 'scheduler'
-            ? '/scheduler/dashboard'
-            : '/technician/dashboard';
-    return <Navigate to={defaultRoute} replace />;
+    return <Navigate to={defaultRouteForRole(profile.role)} replace />;
   }
 
   return <>{children}</>;

@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 export function AccountSettings() {
   const { profile, fetchProfile, supabaseUser } = useAuthStore();
   const [name, setName] = useState(profile?.name ?? '');
-  const [email, setEmail] = useState(profile?.email ?? '');
   const [phone, setPhone] = useState(profile?.phone ?? '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -22,22 +21,15 @@ export function AccountSettings() {
     if (!profile) return;
     setSaving(true);
     try {
-      const updates: Record<string, string> = {
-        name,
-        phone: phone || '',
-        updated_at: new Date().toISOString(),
-      };
-
-      if (email !== profile.email) {
-        const { error: authError } = await supabase.auth.updateUser({ email });
-        if (authError) throw authError;
-        updates.email = email;
-        toast.info('Verification email sent to your new address');
-      }
-
+      // Email is an identity attribute: changing it requires re-verification and
+      // an administrator, so it is not editable from the portal.
       const { error } = await supabase
         .from('ss_users')
-        .update(updates)
+        .update({
+          name,
+          phone: phone || null,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', profile.id);
       if (error) throw error;
 
@@ -55,8 +47,12 @@ export function AccountSettings() {
       toast.error('Enter your current password');
       return;
     }
-    if (newPassword.length < 6) {
-      toast.error('New password must be at least 6 characters');
+    if (newPassword.length < 12) {
+      toast.error('New password must be at least 12 characters');
+      return;
+    }
+    if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      toast.error('New password must include upper case, lower case and a number');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -99,8 +95,11 @@ export function AccountSettings() {
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Email</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Label htmlFor="account-email">Email</Label>
+            <Input id="account-email" type="email" value={profile?.email ?? ''} disabled />
+            <p className="text-xs text-muted-foreground">
+              Contact an administrator to change your sign-in email.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Phone</Label>
@@ -131,7 +130,7 @@ export function AccountSettings() {
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Minimum 6 characters"
+              placeholder="At least 12 characters"
             />
           </div>
           <div className="space-y-2">

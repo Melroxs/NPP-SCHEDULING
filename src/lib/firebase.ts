@@ -11,15 +11,30 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-let messaging: Messaging | null = null;
+export const isFirebaseConfigured = Boolean(
+  import.meta.env.VITE_FIREBASE_API_KEY &&
+    import.meta.env.VITE_FIREBASE_PROJECT_ID &&
+    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+);
 
-async function getMessagingInstance(): Promise<Messaging | null> {
-  if (messaging) return messaging;
-  const supported = await isSupported();
-  if (!supported) return null;
-  const app = initializeApp(firebaseConfig);
-  messaging = getMessaging(app);
-  return messaging;
+// Cached as a promise: concurrent callers must not initialise the default app twice.
+let messagingPromise: Promise<Messaging | null> | null = null;
+
+function getMessagingInstance(): Promise<Messaging | null> {
+  if (!isFirebaseConfigured) return Promise.resolve(null);
+
+  messagingPromise ??= (async () => {
+    try {
+      const supported = await isSupported();
+      if (!supported) return null;
+      const app = initializeApp(firebaseConfig);
+      return getMessaging(app);
+    } catch {
+      return null;
+    }
+  })();
+
+  return messagingPromise;
 }
 
 export async function requestNotificationPermission(userId: string): Promise<string | null> {
@@ -64,7 +79,7 @@ async function saveDeviceToken(userId: string, token: string) {
 }
 
 export function onForegroundMessage(callback: (payload: { title?: string; body?: string }) => void) {
-  getMessagingInstance().then((msg) => {
+  void getMessagingInstance().then((msg) => {
     if (!msg) return;
     onMessage(msg, (payload) => {
       callback({

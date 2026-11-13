@@ -4,7 +4,6 @@ import { SYSTEM_TZ } from '@/lib/timezone';
 
 const GOOGLE_API_BASE = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_OAUTH_BASE = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 const SCOPES = [
   'openid',
@@ -17,12 +16,29 @@ function getClientId(): string {
   return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 }
 
-function getClientSecret(): string {
-  return import.meta.env.VITE_GOOGLE_CLIENT_SECRET || '';
-}
-
 function getRedirectUri(): string {
   return `${window.location.origin}/auth/google/callback`;
+}
+
+/**
+ * Token exchange/refresh never happens in the browser: the OAuth client secret
+ * and the refresh tokens live only on the server (google-oauth Edge Function).
+ */
+async function callGoogleOAuth<T>(payload: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('google-oauth', { body: payload });
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    if (context && typeof context.json === 'function') {
+      try {
+        const body = (await context.json()) as { error?: string };
+        if (body?.error) throw new Error(body.error);
+      } catch (parseError) {
+        if (parseError instanceof Error) throw parseError;
+      }
+    }
+    throw new Error('Google Calendar is unavailable. Please try again later.');
+  }
+  return data as T;
 }
 
 // ============================================
@@ -42,96 +58,22 @@ export function getGoogleAuthUrl(state?: string): string {
   return `${GOOGLE_OAUTH_BASE}?${params.toString()}`;
 }
 
-export async function exchangeCodeForTokens(code: string): Promise<{
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  id_token?: string;
-}> {
-  const response = await fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: getClientId(),
-      client_secret: getClientSecret(),
-      redirect_uri: getRedirectUri(),
-      grant_type: 'authorization_code',
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Token exchange failed: ${error.error_description || error.error}`);
-  }
-
-  return response.json();
-}
-
-export async function refreshAccessToken(refreshToken: string): Promise<{
-  access_token: string;
-  expires_in: number;
-}> {
-  const response = await fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      refresh_token: refreshToken,
-      client_id: getClientId(),
-      client_secret: getClientSecret(),
-      grant_type: 'refresh_token',
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Token refresh failed: ${error.error_description || error.error}`);
-  }
-
-  return response.json();
-}
-
 // ============================================
 // TOKEN MANAGEMENT
 // ============================================
 
+/**
+ * Returns a short-lived Google access token for `userId`.
+ * Refresh tokens are never exposed to the client.
+ */
 export async function getValidAccessToken(userId: string): Promise<string | null> {
-  const { data: user } = await supabase
-    .from('ss_users')
-    .select('google_access_token, google_refresh_token, google_token_expires_at')
-    .eq('id', userId)
-    .single();
-
-  if (!user?.google_access_token || !user?.google_refresh_token) {
-    return null;
-  }
-
-  // Check if token is expired (with 5 min buffer)
-  const expiresAt = new Date(user.google_token_expires_at || 0);
-  const now = new Date();
-  const bufferMs = 5 * 60 * 1000;
-
-  if (expiresAt.getTime() - now.getTime() > bufferMs) {
-    return user.google_access_token;
-  }
-
-  // Token expired, refresh it
   try {
-    const { access_token, expires_in } = await refreshAccessToken(user.google_refresh_token);
-    const newExpiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
-
-    await supabase
-      .from('ss_users')
-      .update({
-        google_access_token: access_token,
-        google_token_expires_at: newExpiresAt,
-      })
-      .eq('id', userId);
-
-    await logCalendarSync(userId, null, 'token_refresh', 'success');
+    const { access_token } = await callGoogleOAuth<{ access_token: string | null }>({
+      action: 'access_token',
+      user_id: userId,
+    });
     return access_token;
-  } catch (error) {
-    await logCalendarSync(userId, null, 'token_refresh', 'failed', String(error));
+  } catch {
     return null;
   }
 }
@@ -320,62 +262,25 @@ export async function deleteCalendarEvent(
 // ============================================
 
 export async function connectGoogleCalendar(
-  userId: string,
   code: string,
 ): Promise<{ success: boolean; calendarId?: string; error?: string }> {
   try {
-    const tokens = await exchangeCodeForTokens(code);
-    const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-    // Get user info from id_token or fetch calendar list
-    const calendars = await listCalendars(tokens.access_token);
-    const primaryCalendar = calendars.find((c) => c.primary) || calendars[0];
-
-    if (!primaryCalendar) {
-      return { success: false, error: 'No calendars found in Google account' };
-    }
-
-    // Get Google account email
-    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    const result = await callGoogleOAuth<{ connected: boolean; calendar_id: string }>({
+      action: 'exchange',
+      code,
+      redirect_uri: getRedirectUri(),
     });
-    const userInfo = await userInfoResponse.json();
-
-    await supabase
-      .from('ss_users')
-      .update({
-        google_account_id: userInfo.id || userInfo.email,
-        google_calendar_id: primaryCalendar.id,
-        google_access_token: tokens.access_token,
-        google_refresh_token: tokens.refresh_token,
-        google_token_expires_at: expiresAt,
-        calendar_connected: true,
-      })
-      .eq('id', userId);
-
-    await logCalendarSync(userId, null, 'sync', 'success', `Connected calendar: ${primaryCalendar.summary}`);
-
-    return { success: true, calendarId: primaryCalendar.id };
+    return { success: true, calendarId: result.calendar_id };
   } catch (error) {
-    await logCalendarSync(userId, null, 'sync', 'failed', String(error));
-    return { success: false, error: String(error) };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to connect Google Calendar',
+    };
   }
 }
 
 export async function disconnectGoogleCalendar(userId: string): Promise<void> {
-  await supabase
-    .from('ss_users')
-    .update({
-      google_account_id: null,
-      google_calendar_id: null,
-      google_access_token: null,
-      google_refresh_token: null,
-      google_token_expires_at: null,
-      calendar_connected: false,
-    })
-    .eq('id', userId);
-
-  await logCalendarSync(userId, null, 'sync', 'success', 'Disconnected calendar');
+  await callGoogleOAuth({ action: 'disconnect', user_id: userId });
 }
 
 export async function createAppointmentEvent(

@@ -23,8 +23,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import type { User } from '@/types/database';
-import { supabase } from '@/lib/supabase';
 import { updateUser } from '@/services/userService';
+import { createUserAccount } from '@/services/adminService';
+import { describeDbError } from '@/lib/dbErrors';
 import { toast } from 'sonner';
 
 export function SchedulerManagement() {
@@ -32,6 +33,8 @@ export function SchedulerManagement() {
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '' });
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -47,21 +50,30 @@ export function SchedulerManagement() {
   }, [load]);
 
   const handleCreate = async () => {
+    if (creating) return;
+    if (!form.name.trim() || !form.email.trim()) {
+      toast.error('Name and email are required');
+      return;
+    }
+
+    setCreating(true);
     try {
-      const { error } = await supabase.from('ss_users').insert({
-        name: form.name,
-        email: form.email,
-        phone: form.phone,
+      // Previously this only inserted a profile row, producing a scheduler who
+      // could never sign in. The server now creates the login as well.
+      const result = await createUserAccount({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
         role: 'scheduler',
-        active: true,
       });
-      if (error) throw error;
-      toast.success('Scheduler created');
-      setCreateDialogOpen(false);
+      setTemporaryPassword(result.temporary_password ?? null);
       setForm({ name: '', email: '', phone: '' });
+      toast.success('Scheduler created');
       load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create');
+      toast.error(describeDbError(err, err instanceof Error ? err.message : 'Failed to create'));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -82,7 +94,13 @@ export function SchedulerManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Scheduler Management</h1>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) setTemporaryPassword(null);
+          }}
+        >
           <DialogTrigger render={<Button />}>
             <Plus className="h-4 w-4 mr-2" />
             Add Scheduler
@@ -91,6 +109,15 @@ export function SchedulerManagement() {
             <DialogHeader>
               <DialogTitle>Create Scheduler</DialogTitle>
             </DialogHeader>
+            {temporaryPassword && (
+              <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                <p className="text-sm font-medium">Scheduler created</p>
+                <p className="text-xs text-muted-foreground">
+                  Share this temporary password securely. It is shown only once and must be changed at first sign-in.
+                </p>
+                <code className="block break-all rounded bg-background p-2 text-sm">{temporaryPassword}</code>
+              </div>
+            )}
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Name</Label>
@@ -114,8 +141,8 @@ export function SchedulerManagement() {
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
               </div>
-              <Button onClick={handleCreate} className="w-full">
-                Create Scheduler
+              <Button onClick={handleCreate} className="w-full" disabled={creating}>
+                {creating ? 'Creating...' : 'Create Scheduler'}
               </Button>
             </div>
           </DialogContent>

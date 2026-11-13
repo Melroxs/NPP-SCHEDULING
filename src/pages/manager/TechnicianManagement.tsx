@@ -23,7 +23,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil } from 'lucide-react';
 import type { User } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createTechnician } from '@/services/technicianService';
+import { describeDbError } from '@/lib/dbErrors';
 import { toast } from 'sonner';
 
 export function TechnicianManagement() {
@@ -33,6 +34,8 @@ export function TechnicianManagement() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingTech, setEditingTech] = useState<User | null>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '' });
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -48,51 +51,30 @@ export function TechnicianManagement() {
   }, [load]);
 
   const handleCreate = async () => {
+    if (creating) return;
+    if (!form.name.trim() || !form.email.trim()) {
+      toast.error('Name and email are required');
+      return;
+    }
+
+    setCreating(true);
     try {
-      // Create auth user
-      const passwordChars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-      const randomBytes = new Uint8Array(6);
-      window.crypto.getRandomValues(randomBytes);
-      const randomSuffix = Array.from(randomBytes, (byte) => passwordChars[byte % passwordChars.length]).join('');
-      const tempPassword = 'TempPass' + randomSuffix + '!';
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: form.email,
-        password: tempPassword,
-        email_confirm: true,
+      // The server creates the login and the profile together and returns a
+      // one-time temporary password. Nothing is hardcoded in the client.
+      const result = await createTechnician({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
       });
 
-      if (authError) {
-        // Fallback: just create the profile if admin API not available
-        const { error: profileError } = await supabase
-          .from('ss_users')
-          .insert({
-            name: form.name,
-            email: form.email,
-            phone: form.phone,
-            role: 'technician',
-            active: true,
-          });
-        if (profileError) throw profileError;
-      } else if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('ss_users')
-          .insert({
-            id: authData.user.id,
-            name: form.name,
-            email: form.email,
-            phone: form.phone,
-            role: 'technician',
-            active: true,
-          });
-        if (profileError) throw profileError;
-      }
-
-      toast.success('Technician created');
-      setCreateDialogOpen(false);
+      setTemporaryPassword(result.temporary_password ?? null);
       setForm({ name: '', email: '', phone: '' });
+      toast.success('Technician created');
       load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create technician');
+      toast.error(describeDbError(err, err instanceof Error ? err.message : 'Failed to create technician'));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -134,7 +116,13 @@ export function TechnicianManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Technician Management</h1>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) setTemporaryPassword(null);
+          }}
+        >
           <DialogTrigger render={<Button />}>
             <Plus className="h-4 w-4 mr-2" />
             Add Technician
@@ -143,6 +131,15 @@ export function TechnicianManagement() {
             <DialogHeader>
               <DialogTitle>Create Technician</DialogTitle>
             </DialogHeader>
+            {temporaryPassword && (
+              <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                <p className="text-sm font-medium">Technician created</p>
+                <p className="text-xs text-muted-foreground">
+                  Share this temporary password securely. It is shown only once and must be changed at first sign-in.
+                </p>
+                <code className="block break-all rounded bg-background p-2 text-sm">{temporaryPassword}</code>
+              </div>
+            )}
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Name</Label>
@@ -166,8 +163,8 @@ export function TechnicianManagement() {
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
               </div>
-              <Button onClick={handleCreate} className="w-full">
-                Create Technician
+              <Button onClick={handleCreate} className="w-full" disabled={creating}>
+                {creating ? 'Creating...' : 'Create Technician'}
               </Button>
             </div>
           </DialogContent>

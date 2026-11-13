@@ -1,10 +1,12 @@
 import { supabase } from '@/lib/supabase';
+import { USER_PUBLIC_COLUMNS } from '@/lib/userColumns';
+import { createUserAccount } from './adminService';
 import type { User, AvailabilityBlock } from '@/types/database';
 
 export async function getTechnicians() {
   const { data, error } = await supabase
     .from('ss_users')
-    .select('*')
+    .select(USER_PUBLIC_COLUMNS)
     .eq('role', 'technician')
     .order('name');
   if (error) throw error;
@@ -14,7 +16,7 @@ export async function getTechnicians() {
 export async function getActiveTechnicians() {
   const { data, error } = await supabase
     .from('ss_users')
-    .select('*')
+    .select(USER_PUBLIC_COLUMNS)
     .eq('role', 'technician')
     .eq('active', true)
     .order('name');
@@ -25,40 +27,24 @@ export async function getActiveTechnicians() {
 export async function getTechnician(id: string) {
   const { data, error } = await supabase
     .from('ss_users')
-    .select('*')
+    .select(USER_PUBLIC_COLUMNS)
     .eq('id', id)
     .single();
   if (error) throw error;
   return data as User;
 }
 
+/**
+ * Creates the login (auth user) and the portal profile together, server-side.
+ * Returns a one-time temporary password when the server generated one.
+ */
 export async function createTechnician(technician: {
   name: string;
   email: string;
   phone?: string;
 }) {
-  // Create auth user first, then profile
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email: technician.email,
-    password: 'TempPass123!', // Should be changed on first login
-    email_confirm: true,
-  });
-  if (authError) throw authError;
-
-  const { data, error } = await supabase
-    .from('ss_users')
-    .insert({
-      id: authData.user.id,
-      name: technician.name,
-      email: technician.email,
-      phone: technician.phone,
-      role: 'technician',
-      active: true,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data as User;
+  const result = await createUserAccount({ ...technician, role: 'technician' });
+  return result;
 }
 
 export async function updateTechnician(id: string, updates: Partial<User>) {
@@ -66,7 +52,7 @@ export async function updateTechnician(id: string, updates: Partial<User>) {
     .from('ss_users')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select()
+    .select(USER_PUBLIC_COLUMNS)
     .single();
   if (error) throw error;
   return data as User;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { getGoogleAuthUrl, disconnectGoogleCalendar, getCalendarSyncLogs } from '@/services/googleCalendarService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +7,6 @@ import { formatEST } from '@/lib/timezone';
 import { Calendar, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 import type { CalendarSyncLog } from '@/types/database';
 import { toast } from 'sonner';
-import { useEffect } from 'react';
 
 export function GoogleCalendarSettings() {
   const { profile, refreshProfile } = useAuthStore();
@@ -15,22 +14,26 @@ export function GoogleCalendarSettings() {
   const [syncLogs, setSyncLogs] = useState<CalendarSyncLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
-  useEffect(() => {
-    if (profile?.calendar_connected) {
-      loadSyncLogs();
-    }
-  }, [profile?.calendar_connected]);
+  const profileId = profile?.id;
 
-  const loadSyncLogs = async () => {
-    if (!profile) return;
+  const loadSyncLogs = useCallback(async () => {
+    if (!profileId) return;
     setLoadingLogs(true);
     try {
-      const logs = await getCalendarSyncLogs(profile.id, 10);
+      const logs = await getCalendarSyncLogs(profileId, 10);
       setSyncLogs(logs);
     } finally {
       setLoadingLogs(false);
     }
-  };
+  }, [profileId]);
+
+  useEffect(() => {
+    if (!profile?.calendar_connected) return;
+    // Async boundary: state is only touched after the request resolves.
+    void (async () => {
+      await loadSyncLogs();
+    })();
+  }, [profile?.calendar_connected, loadSyncLogs]);
 
   const handleConnect = () => {
     const authUrl = getGoogleAuthUrl(profile?.id);

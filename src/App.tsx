@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuthStore } from '@/stores/authStore';
+import { defaultRouteForRole } from '@/lib/roles';
 import { AuthGuard } from '@/components/shared/AuthGuard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -50,15 +51,7 @@ import { TermsOfService } from '@/pages/legal/TermsOfService';
 function AppRoutes() {
   const { profile } = useAuthStore();
 
-  const defaultRoute = profile
-    ? profile.role === 'admin'
-      ? '/admin/dashboard'
-      : profile.role === 'manager'
-        ? '/manager/dashboard'
-        : profile.role === 'scheduler'
-          ? '/scheduler/dashboard'
-          : '/technician/dashboard'
-    : '/login';
+  const defaultRoute = defaultRouteForRole(profile?.role);
 
   return (
     <Routes>

@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { getUsers, updateUser, deleteUser } from '@/services/userService';
+import { getUsers, updateUser } from '@/services/userService';
+import { createUserAccount, deleteUserAccount } from '@/services/adminService';
+import { describeDbError } from '@/lib/dbErrors';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +32,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import type { User, UserRole } from '@/types/database';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -50,6 +51,8 @@ export function UserManagement() {
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [filterRole, setFilterRole] = useState<string>('all');
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'technician' as UserRole });
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -65,48 +68,34 @@ export function UserManagement() {
   }, [load]);
 
   const handleCreate = async () => {
-    if (!form.password || form.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (creating) return;
+    if (!form.name.trim() || !form.email.trim()) {
+      toast.error('Name and email are required');
       return;
     }
+    if (form.password && form.password.length < 12) {
+      toast.error('Password must be at least 12 characters');
+      return;
+    }
+
+    setCreating(true);
     try {
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: form.email,
-        password: form.password,
-        email_confirm: true,
+      const result = await createUserAccount({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
+        role: form.role,
+        password: form.password || undefined,
       });
 
-      if (authError) {
-        const { error: profileError } = await supabase
-          .from('ss_users')
-          .insert({
-            name: form.name,
-            email: form.email,
-            phone: form.phone || null,
-            role: form.role,
-            active: true,
-          });
-        if (profileError) throw profileError;
-      } else if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('ss_users')
-          .insert({
-            id: authData.user.id,
-            name: form.name,
-            email: form.email,
-            phone: form.phone || null,
-            role: form.role,
-            active: true,
-          });
-        if (profileError) throw profileError;
-      }
-
-      toast.success(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} created successfully`);
-      setCreateDialogOpen(false);
+      setTemporaryPassword(result.temporary_password ?? null);
       setForm({ name: '', email: '', phone: '', password: '', role: 'technician' });
+      toast.success(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} created successfully`);
       load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create user');
+      toast.error(describeDbError(err, err instanceof Error ? err.message : 'Failed to create user'));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -124,13 +113,13 @@ export function UserManagement() {
   const handleDelete = async () => {
     if (!deletingUser) return;
     try {
-      await deleteUser(deletingUser.id);
+      await deleteUserAccount(deletingUser.id);
       toast.success('User deleted');
       setDeleteDialogOpen(false);
       setDeletingUser(null);
       load();
-    } catch {
-      toast.error('Failed to delete user');
+    } catch (err) {
+      toast.error(describeDbError(err, err instanceof Error ? err.message : 'Failed to delete user'));
     }
   };
 
@@ -145,8 +134,8 @@ export function UserManagement() {
       toast.success('User updated');
       setEditDialogOpen(false);
       load();
-    } catch {
-      toast.error('Failed to update user');
+    } catch (err) {
+      toast.error(describeDbError(err, 'Failed to update user'));
     }
   };
 
@@ -169,7 +158,13 @@ export function UserManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">User Management</h1>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) setTemporaryPassword(null);
+          }}
+        >
           <DialogTrigger render={<Button />}>
             <Plus className="h-4 w-4 mr-2" />
             Create User
@@ -178,6 +173,15 @@ export function UserManagement() {
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
             </DialogHeader>
+            {temporaryPassword && (
+              <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                <p className="text-sm font-medium">User created</p>
+                <p className="text-xs text-muted-foreground">
+                  Share this temporary password securely. It is shown only once and must be changed at first sign-in.
+                </p>
+                <code className="block break-all rounded bg-background p-2 text-sm">{temporaryPassword}</code>
+              </div>
+            )}
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Role</Label>
@@ -224,11 +228,11 @@ export function UserManagement() {
                   type="password"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Minimum 6 characters"
+                  placeholder="Leave blank to generate a secure one"
                 />
               </div>
-              <Button onClick={handleCreate} className="w-full">
-                Create User
+              <Button onClick={handleCreate} className="w-full" disabled={creating}>
+                {creating ? 'Creating...' : 'Create User'}
               </Button>
             </div>
           </DialogContent>
