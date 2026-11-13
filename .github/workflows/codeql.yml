@@ -13,9 +13,9 @@ name: "CodeQL Advanced"
 
 on:
   push:
-    branches: [ "devin/1782060003-summit-scheduler-mvp" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "devin/1782060003-summit-scheduler-mvp" ]
+    branches: [ "main" ]
   schedule:
     - cron: '36 10 * * 3'
 
