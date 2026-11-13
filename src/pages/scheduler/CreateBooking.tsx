@@ -8,6 +8,7 @@ import { findBestSlots } from '@/services/schedulingEngine';
 import { createCustomer, createAddress, searchCustomers } from '@/services/customerService';
 import { createAppointment } from '@/services/appointmentService';
 import { notifyNewAppointment } from '@/services/notificationService';
+import { describeDbError } from '@/lib/dbErrors';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -159,8 +160,8 @@ export function CreateBooking() {
 
       toast.success('Appointment booked successfully!');
       setStep('confirmed');
-    } catch {
-      toast.error('Failed to create booking');
+    } catch (err) {
+      toast.error(describeDbError(err, 'Failed to create booking'));
     } finally {
       setSubmitting(false);
     }

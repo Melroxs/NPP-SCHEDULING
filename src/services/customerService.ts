@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { sanitizeSearchTerm } from '@/lib/search';
 import type { Customer, Address } from '@/types/database';
 
 export async function getCustomers() {
@@ -65,10 +66,21 @@ export async function createAddress(address: {
 }
 
 export async function searchCustomers(query: string) {
+  const term = sanitizeSearchTerm(query);
+  if (term.length < 2) return [];
+
+  const pattern = `%${term}%`;
   const { data, error } = await supabase
     .from('ss_customers')
     .select('*, addresses(*)')
-    .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,email.ilike.%${query}%,phone.ilike.%${query}%`)
+    .or(
+      [
+        `first_name.ilike.${pattern}`,
+        `last_name.ilike.${pattern}`,
+        `email.ilike.${pattern}`,
+        `phone.ilike.${pattern}`,
+      ].join(','),
+    )
     .order('last_name')
     .limit(20);
   if (error) throw error;

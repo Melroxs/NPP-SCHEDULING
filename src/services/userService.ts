@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/supabase';
+import { USER_PUBLIC_COLUMNS } from '@/lib/userColumns';
 import type { User, UserRole } from '@/types/database';
 
 export async function getUsers(role?: UserRole) {
-  let query = supabase.from('ss_users').select('*').order('name');
+  let query = supabase.from('ss_users').select(USER_PUBLIC_COLUMNS).order('name');
   if (role) query = query.eq('role', role);
   const { data, error } = await query;
   if (error) throw error;
@@ -12,7 +13,7 @@ export async function getUsers(role?: UserRole) {
 export async function getUser(id: string) {
   const { data, error } = await supabase
     .from('ss_users')
-    .select('*')
+    .select(USER_PUBLIC_COLUMNS)
     .eq('id', id)
     .single();
   if (error) throw error;
@@ -24,7 +25,7 @@ export async function updateUser(id: string, updates: Partial<User>) {
     .from('ss_users')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select()
+    .select(USER_PUBLIC_COLUMNS)
     .single();
   if (error) throw error;
   return data as User;
@@ -42,10 +43,4 @@ export async function getManagers() {
   return getUsers('manager');
 }
 
-export async function deleteUser(id: string) {
-  const { error } = await supabase
-    .from('ss_users')
-    .delete()
-    .eq('id', id);
-  if (error) throw error;
-}
+/** Deleting an account requires server-side permissions: use adminService.deleteUserAccount. */

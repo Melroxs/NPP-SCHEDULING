@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { APPOINTMENT_WITH_RELATIONS } from '@/lib/userColumns';
 import { toEST } from '@/lib/timezone';
 import { createAppointmentEvent, updateAppointmentEvent, deleteAppointmentEvent } from './googleCalendarService';
 import type { Appointment, AppointmentStatus } from '@/types/database';
@@ -11,12 +12,7 @@ export async function getAppointments(filters?: {
 }) {
   let query = supabase
     .from('ss_appointments')
-    .select(`
-      *,
-      customer:ss_customers(*),
-      technician:ss_users!ss_appointments_technician_id_fkey(*),
-      address:ss_addresses(*)
-    `)
+    .select(APPOINTMENT_WITH_RELATIONS)
     .order('start_time', { ascending: true });
 
   if (filters?.technician_id) {
@@ -40,12 +36,7 @@ export async function getAppointments(filters?: {
 export async function getAppointment(id: string) {
   const { data, error } = await supabase
     .from('ss_appointments')
-    .select(`
-      *,
-      customer:ss_customers(*),
-      technician:ss_users!ss_appointments_technician_id_fkey(*),
-      address:ss_addresses(*)
-    `)
+    .select(APPOINTMENT_WITH_RELATIONS)
     .eq('id', id)
     .single();
   if (error) throw error;
@@ -65,12 +56,7 @@ export async function createAppointment(appointment: {
   const { data, error } = await supabase
     .from('ss_appointments')
     .insert({ ...appointment, status: 'scheduled' })
-    .select(`
-      *,
-      customer:ss_customers(*),
-      technician:ss_users!ss_appointments_technician_id_fkey(*),
-      address:ss_addresses(*)
-    `)
+    .select(APPOINTMENT_WITH_RELATIONS)
     .single();
   if (error) throw error;
 
@@ -128,12 +114,7 @@ export async function rescheduleAppointment(id: string, start_time: string, end_
     .from('ss_appointments')
     .update(update)
     .eq('id', id)
-    .select(`
-      *,
-      customer:ss_customers(*),
-      technician:ss_users!ss_appointments_technician_id_fkey(*),
-      address:ss_addresses(*)
-    `)
+    .select(APPOINTMENT_WITH_RELATIONS)
     .single();
   if (error) throw error;
 
@@ -155,12 +136,7 @@ export async function updateAppointment(id: string, update: {
     .from('ss_appointments')
     .update({ ...update, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select(`
-      *,
-      customer:ss_customers(*),
-      technician:ss_users!ss_appointments_technician_id_fkey(*),
-      address:ss_addresses(*)
-    `)
+    .select(APPOINTMENT_WITH_RELATIONS)
     .single();
   if (error) throw error;
 

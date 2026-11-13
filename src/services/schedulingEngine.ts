@@ -1,9 +1,11 @@
 import { supabase } from '@/lib/supabase';
+import { USER_PUBLIC_COLUMNS } from '@/lib/userColumns';
 import { getRoute } from './geocodingService';
 import { getFreeBusy, getCalendarEvents, getValidAccessToken } from './googleCalendarService';
 import type { SchedulingSlot, Appointment, User, GoogleCalendarEvent } from '@/types/database';
 import { addMinutes, startOfDay, endOfDay, parseISO, isAfter, isBefore, format, addDays, getDay } from 'date-fns';
 import { toEST } from '@/lib/timezone';
+import { overlapsAnyBusySlot } from '@/lib/scheduling';
 
 const DEFAULT_DURATION = 60; // minutes
 const BUSINESS_START_HOUR = 9;
@@ -27,7 +29,7 @@ export async function findBestSlots(
   // 1. Get all active technicians with connected calendars
   const { data: technicians } = await supabase
     .from('ss_users')
-    .select('*')
+    .select(USER_PUBLIC_COLUMNS)
     .eq('role', 'technician')
     .eq('active', true);
 
@@ -173,12 +175,7 @@ async function findTechnicianSlots(
       const slotEnd = addMinutes(slotStart, duration);
       if (isAfter(slotEnd, dayEnd)) break;
 
-      // Check if slot conflicts with busy slots (from Google Calendar or DB)
-      const hasConflict = busySlots.some((busy) => {
-        return isBefore(slotStart, busy.end) && isAfter(slotEnd, busy.start);
-      });
-
-      if (!hasConflict) {
+      if (!overlapsAnyBusySlot(busySlots, slotStart, slotEnd)) {
         // Calculate travel times using DB appointments (have addresses)
         const { travelBefore, distanceBefore } = await calculateTravelBefore(
           appointments,

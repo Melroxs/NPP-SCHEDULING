@@ -56,12 +56,18 @@ CREATE POLICY "ss_sync_logs_insert" ON public.ss_calendar_sync_logs
 -- Technicians can update their own Google token fields
 -- (The existing ss_users_update_own policy already covers this)
 
--- Admins can view all user calendar statuses
+-- Admins can view all user calendar statuses.
+-- These policies already exist in 002, so drop first to keep the migration
+-- idempotent (it previously failed on a fresh database).
+DROP POLICY IF EXISTS "ss_users_select_admin" ON public.ss_users;
 CREATE POLICY "ss_users_select_admin" ON public.ss_users
   FOR SELECT USING (public.ss_get_user_role(auth.uid()) = 'admin');
+DROP POLICY IF EXISTS "ss_users_update_admin" ON public.ss_users;
 CREATE POLICY "ss_users_update_admin" ON public.ss_users
   FOR UPDATE USING (public.ss_get_user_role(auth.uid()) = 'admin');
+DROP POLICY IF EXISTS "ss_users_insert_admin" ON public.ss_users;
 CREATE POLICY "ss_users_insert_admin" ON public.ss_users
   FOR INSERT WITH CHECK (public.ss_get_user_role(auth.uid()) = 'admin');
+DROP POLICY IF EXISTS "ss_users_delete_admin" ON public.ss_users;
 CREATE POLICY "ss_users_delete_admin" ON public.ss_users
   FOR DELETE USING (public.ss_get_user_role(auth.uid()) = 'admin');
